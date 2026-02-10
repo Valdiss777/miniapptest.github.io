@@ -184,6 +184,15 @@
         // Применяем тему Telegram
         document.body.style.backgroundColor = tg.backgroundColor;
 
+        // Проверка доступности API
+        console.log('Telegram WebApp версия:', tg.version);
+        console.log('CloudStorage доступен:', !!tg.CloudStorage);
+        console.log('User ID:', tg.initDataUnsafe?.user?.id);
+
+        if (!tg.CloudStorage) {
+            showError('⚠️ CloudStorage не поддерживается. Обновите Telegram.');
+        }
+
         const MAX_PHOTOS = 5;
         const STORAGE_KEY = 'user_photos';
         let photos = [];
@@ -215,10 +224,17 @@
         // Работа с Telegram Cloud Storage
         function getCloudStorage(key) {
             return new Promise((resolve, reject) => {
+                if (!tg.CloudStorage) {
+                    reject(new Error('CloudStorage не доступен'));
+                    return;
+                }
+                
                 tg.CloudStorage.getItem(key, (error, value) => {
                     if (error) {
+                        console.error('Ошибка getItem:', error);
                         reject(error);
                     } else {
+                        console.log('Загружено из CloudStorage:', value ? value.length : 0, 'символов');
                         resolve(value);
                     }
                 });
@@ -227,10 +243,19 @@
 
         function setCloudStorage(key, value) {
             return new Promise((resolve, reject) => {
+                if (!tg.CloudStorage) {
+                    reject(new Error('CloudStorage не доступен'));
+                    return;
+                }
+                
+                console.log('Сохраняем в CloudStorage:', value.length, 'символов');
+                
                 tg.CloudStorage.setItem(key, value, (error, success) => {
                     if (error) {
+                        console.error('Ошибка setItem:', error);
                         reject(error);
                     } else {
+                        console.log('Успешно сохранено в CloudStorage');
                         resolve(success);
                     }
                 });
@@ -286,6 +311,41 @@
             }, 3000);
         }
 
+        // Сжатие изображения
+        function compressImage(file, maxWidth = 800, quality = 0.8) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        // Пропорциональное уменьшение
+                        if (width > maxWidth) {
+                            height = (height * maxWidth) / width;
+                            width = maxWidth;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Конвертация в base64 с сжатием
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+                        resolve(compressedBase64);
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
         // Добавление фото
         uploadButton.addEventListener('click', () => {
             if (photos.length < MAX_PHOTOS) {
@@ -300,34 +360,41 @@
             // Проверка типа файла
             if (!file.type.startsWith('image/')) {
                 showError('Пожалуйста, выберите изображение');
+                fileInput.value = '';
                 return;
             }
 
-            // Проверка размера (макс. 5MB)
-            if (file.size > 5 * 1024 * 1024) {
-                showError('Размер файла не должен превышать 5MB');
-                return;
-            }
+            // Показываем загрузку
+            uploadButton.disabled = true;
+            uploadButton.innerHTML = '<span>⏳</span><span>Загрузка...</span>';
 
-            // Конвертация в base64
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const base64 = event.target.result;
-                    photos.push(base64);
-                    
-                    // Сохранение в облако
-                    await setCloudStorage(STORAGE_KEY, JSON.stringify(photos));
-                    
-                    renderPhotos();
+            try {
+                // Сжимаем изображение
+                const compressedBase64 = await compressImage(file);
+                
+                console.log('Размер сжатого изображения:', compressedBase64.length);
+                
+                photos.push(compressedBase64);
+                
+                // Сохранение в облако
+                const dataToSave = JSON.stringify(photos);
+                console.log('Сохраняем данные, размер:', dataToSave.length);
+                
+                await setCloudStorage(STORAGE_KEY, dataToSave);
+                
+                renderPhotos();
+                
+                if (tg.HapticFeedback) {
                     tg.HapticFeedback.notificationOccurred('success');
-                } catch (error) {
-                    console.error('Ошибка добавления фото:', error);
-                    showError('Не удалось добавить фото');
-                    photos.pop(); // Убираем последнее добавленное фото при ошибке
                 }
-            };
-            reader.readAsDataURL(file);
+                
+                tg.showAlert('Фото успешно добавлено!');
+            } catch (error) {
+                console.error('Ошибка добавления фото:', error);
+                showError('Не удалось добавить фото: ' + error.message);
+                photos.pop(); // Убираем последнее добавленное фото при ошибке
+                renderPhotos();
+            }
             
             // Очистка input для возможности загрузки того же файла повторно
             fileInput.value = '';
