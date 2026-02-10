@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport"="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Фото Галерея</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -41,20 +41,15 @@
             color: var(--tg-theme-hint-color, #999999);
         }
 
-        .debug-info {
-            background-color: #f0f0f0;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 16px;
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background-color: #34c759;
+            color: white;
+            border-radius: 12px;
             font-size: 12px;
-            font-family: monospace;
-            color: #333;
-            max-height: 150px;
-            overflow-y: auto;
-        }
-
-        .debug-info.hidden {
-            display: none;
+            font-weight: 500;
+            margin-bottom: 16px;
         }
 
         .photo-grid {
@@ -189,28 +184,27 @@
             animation: fadeIn 0.3s ease;
         }
 
-        .toggle-debug {
-            background: none;
-            border: none;
+        .user-info {
+            text-align: center;
+            font-size: 13px;
             color: var(--tg-theme-hint-color, #999999);
-            font-size: 12px;
-            cursor: pointer;
-            text-decoration: underline;
-            margin-bottom: 12px;
-            display: block;
+            margin-bottom: 20px;
+            padding: 8px;
+            background-color: var(--tg-theme-secondary-bg-color, #f7f7f7);
+            border-radius: 8px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📸 Моя Галерея v1</h1>
+            <h1>📸 Моя Галерея v2</h1>
             <p>Загрузите до 5 фотографий</p>
+            <div class="status-badge" id="statusBadge">✓ Готово к работе</div>
         </div>
 
-        <button class="toggle-debug" id="toggleDebug">Показать отладку</button>
-        <div class="debug-info hidden" id="debugInfo">
-            Инициализация...
+        <div class="user-info" id="userInfo">
+            Загрузка информации...
         </div>
 
         <div class="counter" id="counter">
@@ -222,7 +216,7 @@
         </div>
 
         <div class="info-block">
-            <p>💡 Ваши фотографии сохраняются в Telegram Cloud Storage и доступны на всех ваших устройствах</p>
+            <p>💡 Ваши фотографии сохраняются на устройстве и синхронизируются с вашим Telegram аккаунтом</p>
         </div>
 
         <button class="clear-all-btn" id="clearAllBtn" disabled>
@@ -233,156 +227,116 @@
     <input type="file" id="uploadInput" class="upload-input" accept="image/*" multiple>
 
     <script>
-        // Отладочная информация
-        const debugInfo = document.getElementById('debugInfo');
-        const toggleDebug = document.getElementById('toggleDebug');
-        
-        function log(message) {
-            const timestamp = new Date().toLocaleTimeString();
-            const logMessage = `[${timestamp}] ${message}`;
-            console.log(logMessage);
-            debugInfo.innerHTML += logMessage + '<br>';
-            debugInfo.scrollTop = debugInfo.scrollHeight;
-        }
-
-        toggleDebug.addEventListener('click', () => {
-            debugInfo.classList.toggle('hidden');
-            toggleDebug.textContent = debugInfo.classList.contains('hidden') 
-                ? 'Показать отладку' 
-                : 'Скрыть отладку';
-        });
-
-        // Проверка доступности Telegram WebApp
-        log('Проверка Telegram WebApp...');
-        
-        if (typeof window.Telegram === 'undefined' || !window.Telegram.WebApp) {
-            log('❌ ОШИБКА: Telegram WebApp недоступен!');
-            log('Откройте это приложение через Telegram Mini App');
-        } else {
-            log('✅ Telegram WebApp загружен');
-        }
-
         // Инициализация Telegram Web App
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.ready();
+        let tg;
+        let userId = 'demo_user'; // Fallback для тестирования вне Telegram
 
-        log(`Версия: ${tg.version || 'неизвестна'}`);
-        log(`Платформа: ${tg.platform || 'неизвестна'}`);
-        log(`User ID: ${tg.initDataUnsafe?.user?.id || 'неизвестен'}`);
-
-        // Проверка доступности Cloud Storage
-        if (typeof tg.CloudStorage === 'undefined') {
-            log('❌ ОШИБКА: CloudStorage недоступен!');
-            log('Возможно, старая версия Telegram');
-        } else {
-            log('✅ CloudStorage доступен');
+        try {
+            tg = window.Telegram.WebApp;
+            tg.expand();
+            tg.ready();
+            
+            // Получаем ID пользователя
+            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                userId = tg.initDataUnsafe.user.id.toString();
+                console.log('User ID:', userId);
+            }
+            
+            // Применяем тему
+            document.body.style.backgroundColor = tg.backgroundColor || '#ffffff';
+            
+        } catch (error) {
+            console.error('Telegram WebApp не инициализирован:', error);
+            tg = {
+                showAlert: (msg) => alert(msg),
+                showConfirm: (msg, callback) => callback(confirm(msg))
+            };
         }
 
-        // Применяем тему Telegram
-        document.body.style.backgroundColor = tg.backgroundColor || '#ffffff';
+        // Показываем информацию о пользователе
+        const userInfo = document.getElementById('userInfo');
+        if (userId !== 'demo_user') {
+            userInfo.textContent = `👤 User ID: ${userId}`;
+        } else {
+            userInfo.textContent = '⚠️ Демо режим (откройте через Telegram для сохранения данных)';
+            userInfo.style.backgroundColor = '#fff3cd';
+            userInfo.style.color = '#856404';
+        }
 
         const MAX_PHOTOS = 5;
-        const STORAGE_KEY = 'user_photos';
+        const STORAGE_PREFIX = 'tg_photos_';
         let photos = [];
 
         const photoGrid = document.getElementById('photoGrid');
         const uploadInput = document.getElementById('uploadInput');
         const counter = document.getElementById('counter');
         const clearAllBtn = document.getElementById('clearAllBtn');
+        const statusBadge = document.getElementById('statusBadge');
 
-        // Загрузка фотографий из Telegram Cloud Storage
-        async function loadPhotos() {
-            log('Начало загрузки фотографий...');
-            
-            if (typeof tg.CloudStorage === 'undefined') {
-                log('❌ CloudStorage недоступен, используется localStorage');
-                // Fallback на localStorage для тестирования
-                try {
-                    const data = localStorage.getItem(STORAGE_KEY);
-                    if (data) {
-                        photos = JSON.parse(data);
-                        log(`✅ Загружено из localStorage: ${photos.length} фото`);
-                    }
-                } catch (error) {
-                    log(`❌ Ошибка localStorage: ${error.message}`);
-                }
-                renderPhotos();
-                return;
-            }
+        // Получение ключа хранилища для текущего пользователя
+        function getStorageKey() {
+            return STORAGE_PREFIX + userId;
+        }
 
+        // Загрузка фотографий из localStorage
+        function loadPhotos() {
             try {
-                const data = await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        reject(new Error('Timeout: CloudStorage не отвечает'));
-                    }, 5000);
-
-                    tg.CloudStorage.getItem(STORAGE_KEY, (error, result) => {
-                        clearTimeout(timeout);
-                        if (error) {
-                            log(`❌ Ошибка CloudStorage.getItem: ${error}`);
-                            reject(error);
-                        } else {
-                            log(`✅ CloudStorage.getItem выполнен`);
-                            resolve(result);
-                        }
-                    });
-                });
-
+                const storageKey = getStorageKey();
+                const data = localStorage.getItem(storageKey);
+                
                 if (data) {
                     photos = JSON.parse(data);
-                    log(`✅ Загружено фотографий: ${photos.length}`);
+                    console.log(`Загружено ${photos.length} фотографий для пользователя ${userId}`);
+                    statusBadge.textContent = `✓ Загружено ${photos.length} фото`;
+                    statusBadge.style.backgroundColor = '#34c759';
                 } else {
-                    log('ℹ️ Данных в CloudStorage нет (первый запуск)');
+                    console.log('Фотографий не найдено (первый запуск)');
+                    photos = [];
                 }
             } catch (error) {
-                log(`❌ Ошибка загрузки: ${error.message}`);
+                console.error('Ошибка загрузки:', error);
                 photos = [];
+                statusBadge.textContent = '⚠ Ошибка загрузки';
+                statusBadge.style.backgroundColor = '#ff9500';
             }
             
             renderPhotos();
         }
 
-        // Сохранение фотографий в Telegram Cloud Storage
-        async function savePhotos() {
-            log('Начало сохранения фотографий...');
-            
-            if (typeof tg.CloudStorage === 'undefined') {
-                log('CloudStorage недоступен, используется localStorage');
-                // Fallback на localStorage
-                try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(photos));
-                    log(`✅ Сохранено в localStorage: ${photos.length} фото`);
-                } catch (error) {
-                    log(`❌ Ошибка localStorage: ${error.message}`);
-                }
-                return;
-            }
-
+        // Сохранение фотографий в localStorage
+        function savePhotos() {
             try {
-                await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        reject(new Error('Timeout: CloudStorage не отвечает'));
-                    }, 5000);
-
-                    const dataToSave = JSON.stringify(photos);
-                    log(`Размер данных: ${(dataToSave.length / 1024).toFixed(2)} KB`);
-
-                    tg.CloudStorage.setItem(STORAGE_KEY, dataToSave, (error, success) => {
-                        clearTimeout(timeout);
-                        if (error) {
-                            log(`❌ Ошибка CloudStorage.setItem: ${error}`);
-                            reject(error);
-                        } else {
-                            log(`✅ CloudStorage.setItem выполнен: ${success}`);
-                            resolve(success);
-                        }
-                    });
-                });
-                log(`✅ Сохранено фотографий: ${photos.length}`);
+                const storageKey = getStorageKey();
+                const data = JSON.stringify(photos);
+                
+                // Проверяем размер данных (localStorage имеет лимит ~5-10 MB)
+                const sizeKB = (data.length / 1024).toFixed(2);
+                console.log(`Размер данных: ${sizeKB} KB`);
+                
+                if (data.length > 5 * 1024 * 1024) {
+                    throw new Error('Данные слишком большие (лимит 5 MB)');
+                }
+                
+                localStorage.setItem(storageKey, data);
+                console.log(`Сохранено ${photos.length} фотографий для пользователя ${userId}`);
+                
+                statusBadge.textContent = '✓ Сохранено';
+                statusBadge.style.backgroundColor = '#34c759';
+                
+                setTimeout(() => {
+                    statusBadge.textContent = `✓ ${photos.length} фото`;
+                }, 2000);
+                
             } catch (error) {
-                log(`❌ Ошибка сохранения: ${error.message}`);
-                tg.showAlert('Ошибка сохранения данных: ' + error.message);
+                console.error('Ошибка сохранения:', error);
+                statusBadge.textContent = '✗ Ошибка сохранения';
+                statusBadge.style.backgroundColor = '#ff3b30';
+                
+                if (error.name === 'QuotaExceededError') {
+                    tg.showAlert('Превышен лимит хранилища. Удалите несколько фото.');
+                } else {
+                    tg.showAlert('Ошибка сохранения: ' + error.message);
+                }
             }
         }
 
@@ -436,7 +390,6 @@
             div.innerHTML = '<div class="add-icon">+</div>';
             div.onclick = () => {
                 if (photos.length < MAX_PHOTOS) {
-                    log('Открытие диалога выбора файлов...');
                     uploadInput.click();
                 } else {
                     tg.showAlert('Достигнут лимит в 5 фотографий');
@@ -454,44 +407,45 @@
         // Обработка загрузки файлов
         uploadInput.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
-            log(`Выбрано файлов: ${files.length}`);
+            console.log(`Выбрано файлов: ${files.length}`);
             
             const availableSlots = MAX_PHOTOS - photos.length;
             
             if (files.length > availableSlots) {
                 tg.showAlert(`Можно загрузить только ${availableSlots} фото`);
-                log(`⚠️ Превышен лимит, можно загрузить только ${availableSlots}`);
                 return;
             }
+
+            statusBadge.textContent = '⏳ Загрузка...';
+            statusBadge.style.backgroundColor = '#007aff';
 
             for (const file of files) {
                 if (photos.length >= MAX_PHOTOS) break;
                 
                 if (!file.type.startsWith('image/')) {
-                    log(`⚠️ Пропущен не-изображение: ${file.name}`);
+                    console.log(`Пропущен файл: ${file.name} (не изображение)`);
                     continue;
                 }
 
-                log(`Обработка файла: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
+                console.log(`Обработка: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
 
                 try {
                     const base64 = await fileToBase64(file);
                     photos.push(base64);
-                    log(`✅ Файл добавлен в массив`);
+                    console.log(`Добавлено фото ${photos.length}`);
                 } catch (error) {
-                    log(`❌ Ошибка конвертации ${file.name}: ${error.message}`);
+                    console.error(`Ошибка обработки ${file.name}:`, error);
                 }
             }
 
-            await savePhotos();
+            savePhotos();
             renderPhotos();
             uploadInput.value = '';
         });
 
-        // Конвертация файла в Base64
+        // Конвертация файла в Base64 с сжатием
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
-                // Сначала сжимаем изображение
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const img = new Image();
@@ -499,8 +453,8 @@
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         
-                        // Ограничиваем размер изображения
-                        const maxSize = 800;
+                        // Ограничиваем размер для экономии места
+                        const maxSize = 600;
                         let width = img.width;
                         let height = img.height;
                         
@@ -516,9 +470,10 @@
                         canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
                         
-                        // Конвертируем в JPEG с качеством 0.8
-                        const compressed = canvas.toDataURL('image/jpeg', 0.8);
-                        log(`Сжато: ${(compressed.length / 1024).toFixed(2)} KB`);
+                        // Конвертируем в JPEG с качеством 0.7 для экономии места
+                        const compressed = canvas.toDataURL('image/jpeg', 0.7);
+                        const sizeKB = (compressed.length / 1024).toFixed(2);
+                        console.log(`Сжато до: ${sizeKB} KB`);
                         resolve(compressed);
                     };
                     img.onerror = () => reject(new Error('Ошибка загрузки изображения'));
@@ -530,37 +485,32 @@
         }
 
         // Удаление фото
-        async function deletePhoto(index) {
-            log(`Запрос удаления фото ${index}`);
-            tg.showConfirm('Удалить это фото?', async (confirmed) => {
+        function deletePhoto(index) {
+            tg.showConfirm('Удалить это фото?', (confirmed) => {
                 if (confirmed) {
                     photos.splice(index, 1);
-                    log(`✅ Фото ${index} удалено`);
-                    await savePhotos();
+                    console.log(`Удалено фото ${index}`);
+                    savePhotos();
                     renderPhotos();
-                } else {
-                    log('Удаление отменено');
                 }
             });
         }
 
         // Удаление всех фото
         clearAllBtn.addEventListener('click', () => {
-            log('Запрос удаления всех фото');
-            tg.showConfirm('Удалить все фотографии?', async (confirmed) => {
+            tg.showConfirm('Удалить все фотографии?', (confirmed) => {
                 if (confirmed) {
                     photos = [];
-                    log('✅ Все фото удалены');
-                    await savePhotos();
+                    console.log('Все фото удалены');
+                    savePhotos();
                     renderPhotos();
-                } else {
-                    log('Удаление отменено');
                 }
             });
         });
 
         // Инициализация при загрузке
-        log('Запуск инициализации...');
+        console.log('Инициализация приложения...');
+        console.log('User ID:', userId);
         loadPhotos();
     </script>
 </body>
