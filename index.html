@@ -34,17 +34,31 @@
         .subtitle {
             font-size: 14px;
             color: var(--tg-theme-hint-color, #999999);
-            margin-bottom: 24px;
+            margin-bottom: 16px;
         }
 
-        .debug-info {
-            background: rgba(0, 0, 0, 0.05);
-            padding: 8px;
+        .info-panel {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 12px;
             border-radius: 8px;
-            font-size: 11px;
+            font-size: 12px;
             margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .info-label {
+            color: var(--tg-theme-hint-color, #999999);
+        }
+
+        .info-value {
+            font-weight: 500;
             font-family: monospace;
-            word-break: break-all;
         }
 
         .upload-section {
@@ -143,32 +157,46 @@
             color: var(--tg-theme-hint-color, #999999);
         }
 
-        .error-message {
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message.error {
             background-color: rgba(255, 59, 48, 0.1);
             color: #ff3b30;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-size: 14px;
-            display: none;
         }
 
-        .error-message.show {
-            display: block;
-        }
-
-        .success-message {
+        .message.success {
             background-color: rgba(52, 199, 89, 0.1);
             color: #34c759;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-size: 14px;
-            display: none;
         }
 
-        .success-message.show {
-            display: block;
+        .test-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .test-button {
+            flex: 1;
+            padding: 8px;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .test-button:active {
+            opacity: 0.7;
         }
     </style>
 </head>
@@ -177,10 +205,33 @@
         <h1>📸 Моя Галерея</h1>
         <p class="subtitle">Добавьте до 5 фотографий</p>
 
-        <div class="debug-info" id="debugInfo">Инициализация...</div>
+        <div class="info-panel" id="infoPanel">
+            <div class="info-row">
+                <span class="info-label">Хранилище:</span>
+                <span class="info-value" id="storageType">загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">User ID:</span>
+                <span class="info-value" id="userId">загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Фото:</span>
+                <span class="info-value" id="photoCount">0</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Версия TG:</span>
+                <span class="info-value" id="tgVersion">загрузка...</span>
+            </div>
+        </div>
 
-        <div class="error-message" id="errorMessage"></div>
-        <div class="success-message" id="successMessage"></div>
+        <div class="test-buttons">
+            <button class="test-button" onclick="testSave()">🧪 Тест сохранения</button>
+            <button class="test-button" onclick="testLoad()">🔄 Тест загрузки</button>
+            <button class="test-button" onclick="clearAll()">🗑️ Очистить всё</button>
+        </div>
+
+        <div class="message error" id="errorMessage"></div>
+        <div class="message success" id="successMessage"></div>
 
         <div class="upload-section">
             <button class="upload-button" id="uploadButton">
@@ -200,20 +251,16 @@
     </div>
 
     <script>
-        // Инициализация Telegram Web App
-        let tg;
-        try {
-            tg = window.Telegram.WebApp;
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
             tg.ready();
             tg.expand();
-        } catch (e) {
-            console.error('Telegram WebApp не доступен:', e);
         }
 
         const MAX_PHOTOS = 5;
-        const STORAGE_KEY = 'user_photos';
+        const STORAGE_KEY = 'photos_v2';
         let photos = [];
-        let storageType = 'none';
+        let storageMethod = 'unknown';
 
         // Элементы DOM
         const uploadButton = document.getElementById('uploadButton');
@@ -222,123 +269,152 @@
         const counter = document.getElementById('counter');
         const errorMessage = document.getElementById('errorMessage');
         const successMessage = document.getElementById('successMessage');
-        const debugInfo = document.getElementById('debugInfo');
 
-        // Обновление отладочной информации
-        function updateDebugInfo() {
-            const info = [];
-            info.push(`Storage: ${storageType}`);
-            if (tg) {
-                info.push(`TG Version: ${tg.version || 'unknown'}`);
-                info.push(`User ID: ${tg.initDataUnsafe?.user?.id || 'unknown'}`);
-            }
-            info.push(`Photos: ${photos.length}`);
-            debugInfo.textContent = info.join(' | ');
+        // Обновление информационной панели
+        function updateInfo() {
+            document.getElementById('storageType').textContent = storageMethod;
+            document.getElementById('userId').textContent = tg?.initDataUnsafe?.user?.id || 'N/A';
+            document.getElementById('photoCount').textContent = photos.length;
+            document.getElementById('tgVersion').textContent = tg?.version || 'N/A';
         }
 
-        // Работа с хранилищем
-        async function loadPhotos() {
-            try {
-                // Пробуем Cloud Storage
-                if (tg && tg.CloudStorage) {
-                    storageType = 'CloudStorage';
-                    const data = await new Promise((resolve, reject) => {
+        // Универсальная функция загрузки данных
+        async function loadData() {
+            console.log('=== Начало загрузки ===');
+            
+            // Метод 1: Telegram Cloud Storage
+            if (tg?.CloudStorage) {
+                try {
+                    console.log('Пробуем CloudStorage...');
+                    const result = await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
+                            console.log('CloudStorage timeout');
                             reject(new Error('Timeout'));
-                        }, 3000);
-                        
+                        }, 5000);
+
                         tg.CloudStorage.getItem(STORAGE_KEY, (error, value) => {
                             clearTimeout(timeout);
-                            if (error) reject(error);
-                            else resolve(value);
+                            console.log('CloudStorage callback:', { error, hasValue: !!value });
+                            if (error) {
+                                reject(error);
+                            } else {
+                                resolve(value);
+                            }
                         });
                     });
-                    
-                    if (data) {
-                        photos = JSON.parse(data);
+
+                    if (result) {
+                        photos = JSON.parse(result);
+                        storageMethod = 'CloudStorage ✓';
+                        console.log('Загружено из CloudStorage:', photos.length, 'фото');
+                        return;
                     }
-                } else {
-                    throw new Error('CloudStorage недоступен');
+                } catch (err) {
+                    console.warn('CloudStorage ошибка:', err);
                 }
-            } catch (error) {
-                console.log('CloudStorage недоступен, используем localStorage:', error);
-                storageType = 'localStorage';
-                
-                // Fallback на localStorage
+            }
+
+            // Метод 2: localStorage
+            try {
+                console.log('Пробуем localStorage...');
                 const data = localStorage.getItem(STORAGE_KEY);
                 if (data) {
                     photos = JSON.parse(data);
+                    storageMethod = 'localStorage ✓';
+                    console.log('Загружено из localStorage:', photos.length, 'фото');
+                    return;
                 }
+            } catch (err) {
+                console.warn('localStorage ошибка:', err);
             }
-            
-            updateDebugInfo();
-            renderPhotos();
+
+            // Если ничего не найдено
+            photos = [];
+            storageMethod = 'Нет данных';
+            console.log('Данные не найдены, начинаем с пустого массива');
         }
 
-        async function savePhotos() {
-            try {
-                const dataToSave = JSON.stringify(photos);
-                
-                if (storageType === 'CloudStorage' && tg && tg.CloudStorage) {
+        // Универсальная функция сохранения данных
+        async function saveData() {
+            const jsonData = JSON.stringify(photos);
+            console.log('=== Начало сохранения ===');
+            console.log('Сохраняем', photos.length, 'фото, размер:', jsonData.length, 'символов');
+
+            let savedToCloud = false;
+            let savedToLocal = false;
+
+            // Сохранение в CloudStorage
+            if (tg?.CloudStorage) {
+                try {
+                    console.log('Сохраняем в CloudStorage...');
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
                             reject(new Error('Timeout'));
-                        }, 3000);
-                        
-                        tg.CloudStorage.setItem(STORAGE_KEY, dataToSave, (error, success) => {
+                        }, 5000);
+
+                        tg.CloudStorage.setItem(STORAGE_KEY, jsonData, (error, success) => {
                             clearTimeout(timeout);
-                            if (error) reject(error);
-                            else resolve(success);
+                            console.log('CloudStorage setItem callback:', { error, success });
+                            if (error) {
+                                reject(error);
+                            } else {
+                                resolve(success);
+                            }
                         });
                     });
-                } else {
-                    // Fallback на localStorage
-                    localStorage.setItem(STORAGE_KEY, dataToSave);
+                    savedToCloud = true;
+                    storageMethod = 'CloudStorage ✓';
+                    console.log('✓ Сохранено в CloudStorage');
+                } catch (err) {
+                    console.warn('Ошибка CloudStorage при сохранении:', err);
                 }
-                
-                return true;
-            } catch (error) {
-                console.error('Ошибка сохранения:', error);
-                
-                // Если CloudStorage не сработал, пробуем localStorage
-                if (storageType === 'CloudStorage') {
-                    try {
-                        storageType = 'localStorage';
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(photos));
-                        updateDebugInfo();
-                        return true;
-                    } catch (e) {
-                        throw error;
-                    }
-                }
-                throw error;
             }
+
+            // Сохранение в localStorage (всегда делаем как backup)
+            try {
+                console.log('Сохраняем в localStorage...');
+                localStorage.setItem(STORAGE_KEY, jsonData);
+                savedToLocal = true;
+                if (!savedToCloud) {
+                    storageMethod = 'localStorage ✓';
+                }
+                console.log('✓ Сохранено в localStorage');
+            } catch (err) {
+                console.warn('Ошибка localStorage при сохранении:', err);
+            }
+
+            if (!savedToCloud && !savedToLocal) {
+                throw new Error('Не удалось сохранить данные');
+            }
+
+            console.log('=== Сохранение завершено ===');
         }
 
         // Сжатие изображения
-        function compressImage(file, maxWidth = 600, quality = 0.7) {
+        function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const img = new Image();
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
+                        const maxSize = 500;
                         let width = img.width;
                         let height = img.height;
 
-                        if (width > maxWidth) {
-                            height = (height * maxWidth) / width;
-                            width = maxWidth;
+                        if (width > height && width > maxSize) {
+                            height = (height * maxSize) / width;
+                            width = maxSize;
+                        } else if (height > maxSize) {
+                            width = (width * maxSize) / height;
+                            height = maxSize;
                         }
 
                         canvas.width = width;
                         canvas.height = height;
-
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-
-                        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-                        resolve(compressedBase64);
+                        resolve(canvas.toDataURL('image/jpeg', 0.6));
                     };
                     img.onerror = reject;
                     img.src = e.target.result;
@@ -350,7 +426,8 @@
 
         // Отображение фотографий
         function renderPhotos() {
-            updateCounter();
+            updateInfo();
+            counter.textContent = `${photos.length} / ${MAX_PHOTOS} фото`;
 
             if (photos.length === 0) {
                 photosContainer.innerHTML = `
@@ -375,38 +452,21 @@
             `;
 
             uploadButton.disabled = photos.length >= MAX_PHOTOS;
-            if (photos.length >= MAX_PHOTOS) {
-                uploadButton.innerHTML = '<span>✓</span><span>Максимум фото добавлено</span>';
-            } else {
-                uploadButton.innerHTML = '<span>➕</span><span>Добавить фото</span>';
-            }
+            uploadButton.innerHTML = photos.length >= MAX_PHOTOS 
+                ? '<span>✓</span><span>Максимум фото</span>'
+                : '<span>➕</span><span>Добавить фото</span>';
         }
 
-        function updateCounter() {
-            counter.textContent = `${photos.length} / ${MAX_PHOTOS} фото`;
-        }
-
-        function showError(message) {
-            errorMessage.textContent = message;
-            errorMessage.classList.add('show');
-            setTimeout(() => {
-                errorMessage.classList.remove('show');
-            }, 3000);
-        }
-
-        function showSuccess(message) {
-            successMessage.textContent = message;
-            successMessage.classList.add('show');
-            setTimeout(() => {
-                successMessage.classList.remove('show');
-            }, 2000);
+        function showMessage(text, type = 'success') {
+            const msg = type === 'error' ? errorMessage : successMessage;
+            msg.textContent = text;
+            msg.classList.add('show');
+            setTimeout(() => msg.classList.remove('show'), 3000);
         }
 
         // Добавление фото
         uploadButton.addEventListener('click', () => {
-            if (photos.length < MAX_PHOTOS) {
-                fileInput.click();
-            }
+            if (photos.length < MAX_PHOTOS) fileInput.click();
         });
 
         fileInput.addEventListener('change', async (e) => {
@@ -414,7 +474,7 @@
             if (!file) return;
 
             if (!file.type.startsWith('image/')) {
-                showError('Пожалуйста, выберите изображение');
+                showMessage('Выберите изображение', 'error');
                 fileInput.value = '';
                 return;
             }
@@ -423,20 +483,15 @@
             uploadButton.innerHTML = '<span>⏳</span><span>Загрузка...</span>';
 
             try {
-                const compressedBase64 = await compressImage(file);
-                photos.push(compressedBase64);
-                
-                await savePhotos();
-                
+                const compressed = await compressImage(file);
+                photos.push(compressed);
+                await saveData();
                 renderPhotos();
-                showSuccess('✓ Фото добавлено!');
-                
-                if (tg && tg.HapticFeedback) {
-                    tg.HapticFeedback.notificationOccurred('success');
-                }
+                showMessage('✓ Фото добавлено!');
+                tg?.HapticFeedback?.notificationOccurred('success');
             } catch (error) {
-                console.error('Ошибка добавления фото:', error);
-                showError('Ошибка: ' + error.message);
+                console.error('Ошибка:', error);
+                showMessage('Ошибка: ' + error.message, 'error');
                 photos.pop();
                 renderPhotos();
             }
@@ -447,24 +502,62 @@
         // Удаление фото
         window.deletePhoto = async function(index) {
             photos.splice(index, 1);
-            
             try {
-                await savePhotos();
+                await saveData();
                 renderPhotos();
-                showSuccess('✓ Фото удалено');
-                
-                if (tg && tg.HapticFeedback) {
-                    tg.HapticFeedback.notificationOccurred('success');
-                }
+                showMessage('✓ Фото удалено');
+                tg?.HapticFeedback?.notificationOccurred('success');
             } catch (error) {
-                console.error('Ошибка удаления фото:', error);
-                showError('Не удалось удалить фото');
-                loadPhotos();
+                showMessage('Ошибка удаления', 'error');
+                await loadData();
+                renderPhotos();
             }
         };
 
-        // Запуск приложения
-        loadPhotos();
+        // Тестовые функции
+        window.testSave = async function() {
+            try {
+                await saveData();
+                showMessage('✓ Тест сохранения успешен');
+            } catch (err) {
+                showMessage('✗ Ошибка сохранения: ' + err.message, 'error');
+            }
+        };
+
+        window.testLoad = async function() {
+            try {
+                await loadData();
+                renderPhotos();
+                showMessage('✓ Тест загрузки успешен');
+            } catch (err) {
+                showMessage('✗ Ошибка загрузки: ' + err.message, 'error');
+            }
+        };
+
+        window.clearAll = async function() {
+            if (confirm('Удалить все фото?')) {
+                photos = [];
+                try {
+                    await saveData();
+                    renderPhotos();
+                    showMessage('✓ Всё очищено');
+                } catch (err) {
+                    showMessage('Ошибка очистки', 'error');
+                }
+            }
+        };
+
+        // Запуск
+        (async () => {
+            try {
+                await loadData();
+                renderPhotos();
+                console.log('Приложение запущено');
+            } catch (err) {
+                console.error('Ошибка инициализации:', err);
+                renderPhotos();
+            }
+        })();
     </script>
 </body>
 </html>
